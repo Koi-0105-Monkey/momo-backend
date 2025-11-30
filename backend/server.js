@@ -16,11 +16,11 @@ const MOMO_CONFIG = {
 
 // ✅ Appwrite Config
 const APPWRITE_CONFIG = {
-    endpoint: 'https://sgp.cloud.appwrite.io/v1',
-    projectId: '6927c3e3000eb4b8dcce',
-    databaseId: '6927c468001041ff0fc7',
-    ordersCollectionId: process.env.ORDERS_COLLECTION_ID || 'orders',
-    apiKey: process.env.APPWRITE_API_KEY, // ⚠️ Phải set trong Vercel Environment Variables
+    endpoint: 'https://nyc.cloud.appwrite.io/v1',
+    projectId: '69230ad2001fb8f2aee4',
+    databaseId: '68629ae60038a7c61fe4',
+    ordersCollectionId: 'orders' || 'orders',
+    apiKey: 'standard_c9f94d4e2c13a8df7325ae8914bdb6c4f17d92af7461d2bae9e4cc0bdac9395bbabfd5b87f9ab9eb596c1ea9cac286442d954c5fec5eb795f47879bce69539ed12224544b1d5f50d597536a8a06c50df0bddbd91f6c8b0aca3739eb2b2131fd89bf1b7bc86585cdd52c161e22cb602278e5d45d7b87ebbdfdee3be3b8d1df7a1', // ⚠️ Phải set trong Vercel Environment Variables
 };
 
 /**
