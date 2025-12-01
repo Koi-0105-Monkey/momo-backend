@@ -1,13 +1,27 @@
-// backend/server.js - PHIÊN BẢN ĐÚNG
+// server.js - FIXED BACKEND FOR VERCEL
 
 const express = require('express');
 const crypto = require('crypto');
 const { Client, Databases, Query } = require('node-appwrite');
 const app = express();
 
+// ✅ CRITICAL: Parse JSON body
 app.use(express.json());
 
-// ✅ Momo Config - PHẢI GIỐNG payment.ts
+// ✅ CORS for development
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    
+    next();
+});
+
+// ✅ Momo Config - MUST MATCH payment.ts
 const MOMO_CONFIG = {
     partnerCode: 'MOMOEWN820251130',
     accessKey: 'bxpIpXsB5FM0vn5R',
@@ -19,8 +33,9 @@ const APPWRITE_CONFIG = {
     endpoint: 'https://nyc.cloud.appwrite.io/v1',
     projectId: '69230ad2001fb8f2aee4',
     databaseId: '68629ae60038a7c61fe4',
-    ordersCollectionId: 'orders' || 'orders',
-    apiKey: 'standard_c9f94d4e2c13a8df7325ae8914bdb6c4f17d92af7461d2bae9e4cc0bdac9395bbabfd5b87f9ab9eb596c1ea9cac286442d954c5fec5eb795f47879bce69539ed12224544b1d5f50d597536a8a06c50df0bddbd91f6c8b0aca3739eb2b2131fd89bf1b7bc86585cdd52c161e22cb602278e5d45d7b87ebbdfdee3be3b8d1df7a1', // ⚠️ Phải set trong Vercel Environment Variables
+    ordersCollectionId: 'orders',
+    // ⚠️ SET THIS IN VERCEL ENVIRONMENT VARIABLES
+    apiKey: process.env.APPWRITE_API_KEY || 'standard_c9f94d4e2c13a8df7325ae8914bdb6c4f17d92af7461d2bae9e4cc0bdac9395bbabfd5b87f9ab9eb596c1ea9cac286442d954c5fec5eb795f47879bce69539ed12224544b1d5f50d597536a8a06c50df0bddbd91f6c8b0aca3739eb2b2131fd89bf1b7bc86585cdd52c161e22cb602278e5d45d7b87ebbdfdee3be3b8d1df7a1',
 };
 
 /**
@@ -30,16 +45,17 @@ app.get('/', (req, res) => {
     res.json({ 
         status: 'OK', 
         message: 'Momo Webhook Server Running',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        env: process.env.NODE_ENV || 'development'
     });
 });
 
 /**
- * ✅ Webhook endpoint - Momo gọi khi thanh toán thành công
+ * ✅ WEBHOOK ENDPOINT - Momo calls this when payment succeeds
  */
 app.post('/api/momo-webhook', async (req, res) => {
     try {
-        console.log('📥 Received Momo webhook:', JSON.stringify(req.body, null, 2));
+        console.log('📥 Webhook received:', JSON.stringify(req.body, null, 2));
 
         const {
             partnerCode,
@@ -57,7 +73,7 @@ app.post('/api/momo-webhook', async (req, res) => {
             signature,
         } = req.body;
 
-        // ❌ Kiểm tra thiếu dữ liệu
+        // ❌ Check missing fields
         if (!orderId || !transId || resultCode === undefined) {
             console.error('❌ Missing required fields');
             return res.status(400).json({ 
@@ -66,7 +82,7 @@ app.post('/api/momo-webhook', async (req, res) => {
             });
         }
 
-        // 1️⃣ Verify signature để đảm bảo request từ Momo
+        // 1️⃣ Verify signature
         const rawSignature = 
             `accessKey=${MOMO_CONFIG.accessKey}` +
             `&amount=${amount}` +
@@ -87,6 +103,9 @@ app.post('/api/momo-webhook', async (req, res) => {
             .update(rawSignature)
             .digest('hex');
 
+        console.log('🔐 Expected signature:', expectedSignature);
+        console.log('🔐 Received signature:', signature);
+
         if (signature !== expectedSignature) {
             console.error('❌ Invalid signature!');
             return res.status(403).json({ 
@@ -99,7 +118,6 @@ app.post('/api/momo-webhook', async (req, res) => {
         if (resultCode !== 0) {
             console.error('❌ Payment failed:', message);
             
-            // Vẫn update order status = failed
             await updateOrderPaymentStatus(orderId, transId, 'failed');
             
             return res.status(200).json({ 
@@ -114,7 +132,7 @@ app.post('/api/momo-webhook', async (req, res) => {
             amount: `${amount.toLocaleString('vi-VN')}đ`,
         });
 
-        // 3️⃣ Update order in Appwrite
+        // 3️⃣ Update order
         const updated = await updateOrderPaymentStatus(orderId, transId, 'paid');
 
         if (!updated) {
@@ -125,10 +143,7 @@ app.post('/api/momo-webhook', async (req, res) => {
             });
         }
 
-        // 4️⃣ TODO: Send push notification to user
-        // await sendPushNotification(orderId);
-
-        // 5️⃣ Response về Momo (BẮT BUỘC trả về resultCode: 0)
+        // 4️⃣ SUCCESS - Return to Momo
         return res.status(200).json({
             message: 'OK',
             resultCode: 0,
@@ -144,7 +159,7 @@ app.post('/api/momo-webhook', async (req, res) => {
 });
 
 /**
- * Update order payment status trong Appwrite
+ * Update order payment status in Appwrite
  */
 async function updateOrderPaymentStatus(orderId, transId, status) {
     try {
@@ -160,7 +175,7 @@ async function updateOrderPaymentStatus(orderId, transId, status) {
 
         const databases = new Databases(client);
 
-        // Tìm order theo order_number
+        // Find order by order_number
         const orders = await databases.listDocuments(
             APPWRITE_CONFIG.databaseId,
             APPWRITE_CONFIG.ordersCollectionId,
@@ -196,22 +211,14 @@ async function updateOrderPaymentStatus(orderId, transId, status) {
     }
 }
 
-/**
- * TODO: Gửi push notification đến app
- */
-async function sendPushNotification(orderId) {
-    // Implement với Expo Push Notification hoặc Firebase
-    console.log('📱 TODO: Send push notification for order:', orderId);
-}
-
-// Start server (Vercel serverless không cần, nhưng để test local)
+// ✅ Start server (for local testing)
 if (process.env.NODE_ENV !== 'production') {
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
-        console.log(`🚀 Webhook server running on http://localhost:${PORT}`);
-        console.log(`📡 Webhook URL: http://localhost:${PORT}/api/momo-webhook`);
+        console.log(`🚀 Server running on http://localhost:${PORT}`);
+        console.log(`📡 Webhook: http://localhost:${PORT}/api/momo-webhook`);
     });
 }
 
-// Export cho Vercel serverless
+// ✅ Export for Vercel serverless
 module.exports = app;
